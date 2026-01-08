@@ -11,6 +11,7 @@ import pandas as pd
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from keyword_extractor import CampaignKeywords
+from progress import ProgressBar, Spinner
 
 
 @dataclass
@@ -167,6 +168,8 @@ def generate_perpetua_csv(
         Path to generated CSV file
     """
     rows = []
+    total_skus = len(campaign_keywords)
+    progress = ProgressBar(total=total_skus, description="Generating goals")
 
     for asin, kw_data in campaign_keywords.items():
         sku = kw_data.sku
@@ -311,14 +314,21 @@ def generate_perpetua_csv(
             rows.append(goal_row)
             rows.append(create_product_row(asin, sku))
 
+        progress.update(1)
+
+    progress.close()
+
     # Create DataFrame and save
-    df = pd.DataFrame(rows)
+    with Spinner("Saving CSV file...", style="dots"):
+        df = pd.DataFrame(rows)
 
-    # Reorder columns to match Perpetua expected format
-    column_order = list(COLUMNS.values())
-    df = df.reindex(columns=column_order)
+        # Reorder columns to match Perpetua expected format
+        column_order = list(COLUMNS.values())
+        df = df.reindex(columns=column_order)
 
-    df.to_csv(output_path, index=False)
+        df.to_csv(output_path, index=False)
+
+    print(f"✓ Saved {len(rows):,} rows to {output_path}")
     return output_path
 
 
@@ -351,6 +361,8 @@ def generate_empty_goals_for_asins(
         Path to generated CSV file
     """
     rows = []
+    total_skus = len(asin_sku_map)
+    progress = ProgressBar(total=total_skus, description="Generating goals")
 
     for asin, sku in asin_sku_map.items():
         # Create all 10 campaign types using CAMPAIGN_TYPES constant
@@ -364,10 +376,17 @@ def generate_empty_goals_for_asins(
             rows.append(goal_row)
             rows.append(create_product_row(asin, sku))
 
-    df = pd.DataFrame(rows)
-    column_order = list(COLUMNS.values())
-    df = df.reindex(columns=column_order)
-    df.to_csv(output_path, index=False)
+        progress.update(1)
+
+    progress.close()
+
+    with Spinner("Saving CSV file...", style="dots"):
+        df = pd.DataFrame(rows)
+        column_order = list(COLUMNS.values())
+        df = df.reindex(columns=column_order)
+        df.to_csv(output_path, index=False)
+
+    print(f"✓ Saved {len(rows):,} rows to {output_path}")
     return output_path
 
 

@@ -13,36 +13,7 @@ from typing import List, Optional, Dict, Any
 
 import pandas as pd
 
-# Optional tqdm for progress bars
-try:
-    from tqdm import tqdm
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
-
-    # Dummy tqdm that just iterates
-    class tqdm:
-        def __init__(self, iterable=None, total=None, unit=None, desc=None, **kwargs):
-            self.iterable = iterable
-            self.total = total
-            self.n = 0
-
-        def __iter__(self):
-            return iter(self.iterable) if self.iterable else iter([])
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-        def update(self, n=1):
-            self.n += n
-            if self.total:
-                print(f"\rProcessing: {self.n:,}/{self.total:,} rows ({100*self.n/self.total:.1f}%)", end='', flush=True)
-
-        def close(self):
-            print()  # New line after progress
+from progress import ProgressBar, Spinner
 
 
 # Common ASIN column name variations in Amazon Ads bulk exports
@@ -243,29 +214,32 @@ def _process_csv(
     filtered_chunks = []
     rows_processed = 0
 
-    with tqdm(total=total_rows, unit='rows', desc='Processing') as pbar:
-        for chunk in pd.read_csv(
-            input_path,
-            chunksize=chunk_size,
-            dtype=str,
-            keep_default_na=False
-        ):
-            # Normalize ASIN values for comparison
-            chunk_asins = chunk[asin_column].str.strip().str.upper()
+    progress = ProgressBar(total=total_rows, description="Filtering rows")
 
-            # Keep rows where ASIN is in our list OR ASIN is empty (metadata rows)
-            mask = chunk_asins.isin(asin_set) | (chunk_asins == '')
-            filtered_chunk = chunk[mask]
+    for chunk in pd.read_csv(
+        input_path,
+        chunksize=chunk_size,
+        dtype=str,
+        keep_default_na=False
+    ):
+        # Normalize ASIN values for comparison
+        chunk_asins = chunk[asin_column].str.strip().str.upper()
 
-            # Count metadata rows (empty ASIN)
-            metadata_count = (chunk_asins[mask] == '').sum()
-            stats['metadata_rows'] += metadata_count
+        # Keep rows where ASIN is in our list OR ASIN is empty (metadata rows)
+        mask = chunk_asins.isin(asin_set) | (chunk_asins == '')
+        filtered_chunk = chunk[mask]
 
-            if not filtered_chunk.empty:
-                filtered_chunks.append(filtered_chunk)
+        # Count metadata rows (empty ASIN)
+        metadata_count = (chunk_asins[mask] == '').sum()
+        stats['metadata_rows'] += metadata_count
 
-            rows_processed += len(chunk)
-            pbar.update(len(chunk))
+        if not filtered_chunk.empty:
+            filtered_chunks.append(filtered_chunk)
+
+        rows_processed += len(chunk)
+        progress.update(len(chunk))
+
+    progress.close()
 
     # Combine and write output
     if filtered_chunks:
@@ -291,16 +265,15 @@ def _process_excel(
 ) -> Dict[str, Any]:
     """Process an Excel bulk file."""
 
-    print("Loading Excel file (this may take a while for large files)...")
-
     # For very large Excel files, we need to read in chunks
     # First, get the sheet info
-    xl_file = pd.ExcelFile(input_path, engine='openpyxl')
-    sheet_name = xl_file.sheet_names[0]
+    with Spinner("Loading Excel file structure...", style="dots"):
+        xl_file = pd.ExcelFile(input_path, engine='openpyxl')
+        sheet_name = xl_file.sheet_names[0]
 
-    # Read header row
-    header_df = pd.read_excel(input_path, sheet_name=sheet_name, nrows=0, engine='openpyxl')
-    asin_column = find_asin_column(header_df.columns.tolist())
+        # Read header row
+        header_df = pd.read_excel(input_path, sheet_name=sheet_name, nrows=0, engine='openpyxl')
+        asin_column = find_asin_column(header_df.columns.tolist())
 
     if not asin_column:
         raise ValueError(
@@ -308,37 +281,40 @@ def _process_excel(
         )
 
     stats['asin_column'] = asin_column
+    print(f"✓ ASIN column: {asin_column}")
 
     # For Excel, we need to read the whole file (openpyxl doesn't support chunked reading well)
-    print(f"ASIN column: {asin_column}")
-    print("Reading Excel data...")
-
-    df = pd.read_excel(
-        input_path,
-        sheet_name=sheet_name,
-        dtype=str,
-        keep_default_na=False,
-        engine='openpyxl'
-    )
+    with Spinner("Reading Excel data (this may take a while)...", style="bouncing"):
+        df = pd.read_excel(
+            input_path,
+            sheet_name=sheet_name,
+            dtype=str,
+            keep_default_na=False,
+            engine='openpyxl'
+        )
 
     stats['original_rows'] = len(df)
-    print(f"Found {len(df):,} data rows")
-    print("Filtering rows...")
+    print(f"✓ Found {len(df):,} data rows")
 
-    # Normalize ASIN values for comparison
-    df_asins = df[asin_column].str.strip().str.upper()
+    with Spinner("Filtering rows...", style="dots"):
+        # Normalize ASIN values for comparison
+        df_asins = df[asin_column].str.strip().str.upper()
 
-    # Keep rows where ASIN is in our list OR ASIN is empty (metadata rows)
-    mask = df_asins.isin(asin_set) | (df_asins == '')
-    filtered_df = df[mask]
+        # Keep rows where ASIN is in our list OR ASIN is empty (metadata rows)
+        mask = df_asins.isin(asin_set) | (df_asins == '')
+        filtered_df = df[mask]
 
-    # Count metadata rows
-    stats['metadata_rows'] = (df_asins[mask] == '').sum()
-    stats['filtered_rows'] = len(filtered_df)
+        # Count metadata rows
+        stats['metadata_rows'] = (df_asins[mask] == '').sum()
+        stats['filtered_rows'] = len(filtered_df)
+
+    print(f"✓ Filtered to {len(filtered_df):,} rows")
 
     # Write output
-    print("Writing output file...")
-    filtered_df.to_excel(output_path, index=False, engine='openpyxl')
+    with Spinner("Writing output file...", style="dots"):
+        filtered_df.to_excel(output_path, index=False, engine='openpyxl')
+
+    print(f"✓ Output saved")
 
     return stats
 
