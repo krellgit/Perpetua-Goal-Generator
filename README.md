@@ -4,10 +4,24 @@ A tool for generating CSV files for Perpetua's bulk operations to launch and edi
 
 ## Overview
 
-This tool helps create properly formatted CSV files for Perpetua's bulk upload feature, supporting:
+This tool helps create properly formatted CSV files for Perpetua's bulk upload feature. It generates a **10-campaign structure** per SKU, organizing keywords by segment and match type.
 
-1. **Keyword Targeting Goals** (`SingleCampaign_KW`)
-2. **Product Attributed Targeting Goals** (`SingleCampaign_PAT`)
+## 10-Campaign Structure
+
+Each SKU gets up to 10 separate campaigns:
+
+| # | Campaign Type | Goal Name Suffix | Description |
+|---|---------------|------------------|-------------|
+| 1 | Branded - Exact | `[SP_BRANDED_EXACT] JN` | Exact match branded keywords |
+| 2 | Branded - Phrase | `[SP_BRANDED_PHRASE] JN` | Phrase match branded keywords |
+| 3 | Branded - Broad | `[SP_BRANDED_BROAD] JN` | Broad match branded keywords |
+| 4 | Branded - PAT | `[SP_BRANDED_PAT] JN` | Branded product attribute targeting |
+| 5 | Unbranded - Exact | `[SP_MANUAL_EXACT] JN` | Exact match unbranded keywords |
+| 6 | Unbranded - Phrase | `[SP_MANUAL_PHRASE] JN` | Phrase match unbranded keywords |
+| 7 | Unbranded - Broad | `[SP_MANUAL_BROAD] JN` | Broad match unbranded keywords |
+| 8 | Competitor - KW | `[SP_COMPETITOR_KW] JN` | Competitor keywords (all match types) |
+| 9 | Competitor - PAT | `[SP_COMPETITOR_PAT] JN` | Competitor product targeting |
+| 10 | Automatic | `[SP_AUTO] JN` | Automatic campaign keywords |
 
 ## Naming Convention
 
@@ -17,10 +31,16 @@ SKU - ASIN [SP_SEGMENT_MATCHTYPE] JN
 ```
 
 Examples:
-1. `NT15511A - B07Y5L9WLP [SP_KEYWORD_EXACT] JN`
-2. `NT15511A - B07Y5L9WLP [SP_KEYWORD_PHRASE] JN`
-3. `NT15511A - B07Y5L9WLP [SP_KEYWORD_BROAD] JN`
-4. `NT15511A - B07Y5L9WLP [SP_PAT_ASIN] JN`
+1. `NT15511A - B07Y5L9WLP [SP_BRANDED_EXACT] JN`
+2. `NT15511A - B07Y5L9WLP [SP_BRANDED_PHRASE] JN`
+3. `NT15511A - B07Y5L9WLP [SP_BRANDED_BROAD] JN`
+4. `NT15511A - B07Y5L9WLP [SP_BRANDED_PAT] JN`
+5. `NT15511A - B07Y5L9WLP [SP_MANUAL_EXACT] JN`
+6. `NT15511A - B07Y5L9WLP [SP_MANUAL_PHRASE] JN`
+7. `NT15511A - B07Y5L9WLP [SP_MANUAL_BROAD] JN`
+8. `NT15511A - B07Y5L9WLP [SP_COMPETITOR_KW] JN`
+9. `NT15511A - B07Y5L9WLP [SP_COMPETITOR_PAT] JN`
+10. `NT15511A - B07Y5L9WLP [SP_AUTO] JN`
 
 ## Installation
 
@@ -28,9 +48,48 @@ Examples:
 pip install -r requirements.txt
 ```
 
+## Workflow
+
+The recommended workflow is: **Trim -> Generate**
+
+### Step 1: Trim Large Bulk Export (Optional)
+
+If you have a large Amazon Ads bulk export (600-700MB), first trim it to only include your ASINs:
+
+```bash
+python main.py trim --bulk-file export.xlsx --asin-sku "ASIN and SKU.csv" --output trimmed.xlsx
+```
+
+This significantly reduces file size and processing time for the generate step.
+
+### Step 2: Generate Perpetua CSV
+
+Generate the Perpetua bulk upload CSV:
+
+```bash
+python main.py generate --asin-sku "ASIN and SKU.csv" --amazon-export trimmed.xlsx --output goals.csv
+```
+
 ## Usage
 
-### Generate Empty Template
+### Trim Command
+
+Trim large Amazon Ads bulk export files to only include rows matching your ASIN list:
+
+```bash
+python main.py trim --bulk-file export.xlsx --asin-sku "ASIN and SKU.csv" --output trimmed.xlsx
+```
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `--bulk-file`, `-b` | Yes | Path to bulk export file (.csv or .xlsx) |
+| `--asin-sku`, `-a` | Yes | Path to ASIN/SKU CSV file |
+| `--output`, `-o` | Yes | Path for trimmed output file |
+| `--chunk-size` | No | Rows to process at a time (default: 50000) |
+
+### Generate Command
+
+#### Generate Empty Template
 
 Generate a Perpetua CSV template with your ASINs/SKUs (no keywords):
 
@@ -38,7 +97,7 @@ Generate a Perpetua CSV template with your ASINs/SKUs (no keywords):
 python main.py generate --asin-sku "ASIN and SKU.csv" --output goals.csv
 ```
 
-### Generate with Keywords from Amazon Export
+#### Generate with Keywords from Amazon Export
 
 1. Export your campaigns from Amazon Ads Console:
    1.1. Go to Amazon Advertising Console
@@ -46,10 +105,14 @@ python main.py generate --asin-sku "ASIN and SKU.csv" --output goals.csv
    1.3. Click "Create spreadsheet for download"
    1.4. Select your campaigns and download
 
-2. Run the generator with the export:
-
+2. (Optional) Trim the export to your ASINs:
 ```bash
-python main.py generate --asin-sku "ASIN and SKU.csv" --amazon-export bulk.xlsx --output goals.csv
+python main.py trim --bulk-file bulk.xlsx --asin-sku "ASIN and SKU.csv" --output trimmed.xlsx
+```
+
+3. Run the generator with the export:
+```bash
+python main.py generate --asin-sku "ASIN and SKU.csv" --amazon-export trimmed.xlsx --output goals.csv
 ```
 
 ### Configuration Options
@@ -70,9 +133,19 @@ python main.py generate --asin-sku "ASIN and SKU.csv" --output goals.csv \
 | `--min-bid` | 0.20 | Minimum bid |
 | `--max-bid` | 2.00 | Maximum bid |
 | `--status` | Enabled | Goal status (Enabled/Paused) |
-| `--kw-only` | - | Generate only keyword goals |
-| `--pat-only` | - | Generate only PAT goals |
-| `--combined` | - | Combine match types into single goal |
+
+## Segment Detection Rules
+
+Keywords are automatically categorized based on campaign name patterns in the Amazon bulk export:
+
+| Segment | Campaign Name Pattern | Description |
+|---------|----------------------|-------------|
+| Branded KW | Contains "BRANDED" (not "PAT") | Brand-related keywords |
+| Branded PAT | Contains "BRANDED" and "PAT" | Brand product targeting |
+| Unbranded KW | Contains "MANUAL" (not "COMPETITOR") | Generic/category keywords |
+| Competitor KW | Contains "COMPETITOR" and "MANUAL" | Competitor brand keywords |
+| Competitor PAT | Contains "PAT" (not "BRANDED") | Competitor product targeting |
+| Auto | Contains "AUTO" | Automatic campaign terms |
 
 ## Input Files
 
@@ -97,7 +170,7 @@ Excel/CSV export from Amazon Ads Console containing:
 
 The generator creates a Perpetua-formatted CSV with:
 
-1. Goal rows for each ASIN (KW and/or PAT)
+1. Goal rows for each ASIN (up to 10 campaigns per SKU)
 2. Product rows beneath each goal
 3. All configuration values pre-filled
 

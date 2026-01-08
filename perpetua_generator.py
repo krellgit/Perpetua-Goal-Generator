@@ -52,23 +52,42 @@ COLUMNS = {
 }
 
 
-def generate_goal_name(sku: str, asin: str, segment: str, match_type: str) -> str:
+def generate_goal_name(sku: str, asin: str, campaign_type: str) -> str:
     """
     Generate goal name following naming convention.
 
-    Format: SKU - ASIN [SP_SEGMENT_MATCHTYPE] JN
+    Format: SKU - ASIN [SP_CAMPAIGN_TYPE] JN
 
     Args:
         sku: Product SKU
         asin: Product ASIN
-        segment: KEYWORD or PAT
-        match_type: EXACT, PHRASE, BROAD, or ASIN
+        campaign_type: One of the 10 campaign type identifiers:
+            - BRANDED_EXACT, BRANDED_PHRASE, BRANDED_BROAD, BRANDED_PAT
+            - MANUAL_EXACT, MANUAL_PHRASE, MANUAL_BROAD
+            - COMPETITOR_KW, COMPETITOR_PAT
+            - AUTO
 
     Returns:
         Formatted goal name (max 60 chars)
     """
-    name = f"{sku} - {asin} [SP_{segment}_{match_type}] JN"
+    name = f"{sku} - {asin} [SP_{campaign_type}] JN"
     return name[:60]  # Truncate to max 60 chars
+
+
+# Campaign type definitions for 10-campaign structure
+CAMPAIGN_TYPES = [
+    # (campaign_type_id, record_type, description)
+    ('BRANDED_EXACT', 'SingleCampaign_KW', 'Branded - Exact'),
+    ('BRANDED_PHRASE', 'SingleCampaign_KW', 'Branded - Phrase'),
+    ('BRANDED_BROAD', 'SingleCampaign_KW', 'Branded - Broad'),
+    ('BRANDED_PAT', 'SingleCampaign_PAT', 'Branded - PAT'),
+    ('MANUAL_EXACT', 'SingleCampaign_KW', 'Unbranded - Exact'),
+    ('MANUAL_PHRASE', 'SingleCampaign_KW', 'Unbranded - Phrase'),
+    ('MANUAL_BROAD', 'SingleCampaign_KW', 'Unbranded - Broad'),
+    ('COMPETITOR_KW', 'SingleCampaign_KW', 'Competitor - KW'),
+    ('COMPETITOR_PAT', 'SingleCampaign_PAT', 'Competitor - PAT'),
+    ('AUTO', 'SingleCampaign_KW', 'Automatic'),
+]
 
 
 def create_goal_row(
@@ -122,21 +141,27 @@ def create_product_row(asin: str, sku: str, status: str = "Enabled") -> Dict:
 def generate_perpetua_csv(
     campaign_keywords: Dict[str, CampaignKeywords],
     config: GoalConfig,
-    output_path: str,
-    generate_kw: bool = True,
-    generate_pat: bool = True,
-    split_by_match_type: bool = True
+    output_path: str
 ) -> str:
     """
-    Generate Perpetua bulk upload CSV.
+    Generate Perpetua bulk upload CSV with 10 campaigns per SKU.
+
+    Creates the following 10 campaign types per SKU:
+    1. Branded - Exact: [SP_BRANDED_EXACT]
+    2. Branded - Phrase: [SP_BRANDED_PHRASE]
+    3. Branded - Broad: [SP_BRANDED_BROAD]
+    4. Branded - PAT: [SP_BRANDED_PAT]
+    5. Unbranded - Exact: [SP_MANUAL_EXACT]
+    6. Unbranded - Phrase: [SP_MANUAL_PHRASE]
+    7. Unbranded - Broad: [SP_MANUAL_BROAD]
+    8. Competitor - KW: [SP_COMPETITOR_KW]
+    9. Competitor - PAT: [SP_COMPETITOR_PAT]
+    10. Automatic: [SP_AUTO]
 
     Args:
         campaign_keywords: Dictionary mapping ASIN -> CampaignKeywords
         config: Goal configuration
         output_path: Path for output CSV
-        generate_kw: Generate keyword targeting goals
-        generate_pat: Generate PAT goals
-        split_by_match_type: If True, create separate goals for each match type
 
     Returns:
         Path to generated CSV file
@@ -146,74 +171,140 @@ def generate_perpetua_csv(
     for asin, kw_data in campaign_keywords.items():
         sku = kw_data.sku
 
-        if generate_kw:
-            if split_by_match_type:
-                # Create separate goals for each match type
-                if kw_data.exact_keywords:
-                    goal_name = generate_goal_name(sku, asin, 'KEYWORD', 'EXACT')
-                    goal_row = create_goal_row(
-                        goal_type='SingleCampaign_KW',
-                        goal_name=goal_name,
-                        config=config,
-                        exact_kw=kw_data.exact_keywords,
-                        negative_exact=kw_data.negative_exact,
-                        negative_phrase=kw_data.negative_phrase
-                    )
-                    rows.append(goal_row)
-                    rows.append(create_product_row(asin, sku))
+        # 1. Branded - Exact
+        if kw_data.branded_exact:
+            goal_name = generate_goal_name(sku, asin, 'BRANDED_EXACT')
+            goal_row = create_goal_row(
+                goal_type='SingleCampaign_KW',
+                goal_name=goal_name,
+                config=config,
+                exact_kw=kw_data.branded_exact,
+                negative_exact=kw_data.negative_exact,
+                negative_phrase=kw_data.negative_phrase
+            )
+            rows.append(goal_row)
+            rows.append(create_product_row(asin, sku))
 
-                if kw_data.phrase_keywords:
-                    goal_name = generate_goal_name(sku, asin, 'KEYWORD', 'PHRASE')
-                    goal_row = create_goal_row(
-                        goal_type='SingleCampaign_KW',
-                        goal_name=goal_name,
-                        config=config,
-                        phrase_kw=kw_data.phrase_keywords,
-                        negative_exact=kw_data.negative_exact,
-                        negative_phrase=kw_data.negative_phrase
-                    )
-                    rows.append(goal_row)
-                    rows.append(create_product_row(asin, sku))
+        # 2. Branded - Phrase
+        if kw_data.branded_phrase:
+            goal_name = generate_goal_name(sku, asin, 'BRANDED_PHRASE')
+            goal_row = create_goal_row(
+                goal_type='SingleCampaign_KW',
+                goal_name=goal_name,
+                config=config,
+                phrase_kw=kw_data.branded_phrase,
+                negative_exact=kw_data.negative_exact,
+                negative_phrase=kw_data.negative_phrase
+            )
+            rows.append(goal_row)
+            rows.append(create_product_row(asin, sku))
 
-                if kw_data.broad_keywords:
-                    goal_name = generate_goal_name(sku, asin, 'KEYWORD', 'BROAD')
-                    goal_row = create_goal_row(
-                        goal_type='SingleCampaign_KW',
-                        goal_name=goal_name,
-                        config=config,
-                        broad_kw=kw_data.broad_keywords,
-                        negative_exact=kw_data.negative_exact,
-                        negative_phrase=kw_data.negative_phrase
-                    )
-                    rows.append(goal_row)
-                    rows.append(create_product_row(asin, sku))
-            else:
-                # Combined keyword goal
-                has_keywords = (kw_data.exact_keywords or
-                               kw_data.phrase_keywords or
-                               kw_data.broad_keywords)
-                if has_keywords:
-                    goal_name = generate_goal_name(sku, asin, 'KEYWORD', 'ALL')
-                    goal_row = create_goal_row(
-                        goal_type='SingleCampaign_KW',
-                        goal_name=goal_name,
-                        config=config,
-                        exact_kw=kw_data.exact_keywords,
-                        phrase_kw=kw_data.phrase_keywords,
-                        broad_kw=kw_data.broad_keywords,
-                        negative_exact=kw_data.negative_exact,
-                        negative_phrase=kw_data.negative_phrase
-                    )
-                    rows.append(goal_row)
-                    rows.append(create_product_row(asin, sku))
+        # 3. Branded - Broad
+        if kw_data.branded_broad:
+            goal_name = generate_goal_name(sku, asin, 'BRANDED_BROAD')
+            goal_row = create_goal_row(
+                goal_type='SingleCampaign_KW',
+                goal_name=goal_name,
+                config=config,
+                broad_kw=kw_data.branded_broad,
+                negative_exact=kw_data.negative_exact,
+                negative_phrase=kw_data.negative_phrase
+            )
+            rows.append(goal_row)
+            rows.append(create_product_row(asin, sku))
 
-        if generate_pat and kw_data.pat_targets:
-            goal_name = generate_goal_name(sku, asin, 'PAT', 'ASIN')
+        # 4. Branded - PAT
+        if kw_data.branded_pat_targets:
+            goal_name = generate_goal_name(sku, asin, 'BRANDED_PAT')
             goal_row = create_goal_row(
                 goal_type='SingleCampaign_PAT',
                 goal_name=goal_name,
                 config=config,
-                pat_targets=kw_data.pat_targets,
+                pat_targets=kw_data.branded_pat_targets,
+                negative_exact=kw_data.negative_exact,
+                negative_phrase=kw_data.negative_phrase
+            )
+            rows.append(goal_row)
+            rows.append(create_product_row(asin, sku))
+
+        # 5. Unbranded - Exact
+        if kw_data.unbranded_exact:
+            goal_name = generate_goal_name(sku, asin, 'MANUAL_EXACT')
+            goal_row = create_goal_row(
+                goal_type='SingleCampaign_KW',
+                goal_name=goal_name,
+                config=config,
+                exact_kw=kw_data.unbranded_exact,
+                negative_exact=kw_data.negative_exact,
+                negative_phrase=kw_data.negative_phrase
+            )
+            rows.append(goal_row)
+            rows.append(create_product_row(asin, sku))
+
+        # 6. Unbranded - Phrase
+        if kw_data.unbranded_phrase:
+            goal_name = generate_goal_name(sku, asin, 'MANUAL_PHRASE')
+            goal_row = create_goal_row(
+                goal_type='SingleCampaign_KW',
+                goal_name=goal_name,
+                config=config,
+                phrase_kw=kw_data.unbranded_phrase,
+                negative_exact=kw_data.negative_exact,
+                negative_phrase=kw_data.negative_phrase
+            )
+            rows.append(goal_row)
+            rows.append(create_product_row(asin, sku))
+
+        # 7. Unbranded - Broad
+        if kw_data.unbranded_broad:
+            goal_name = generate_goal_name(sku, asin, 'MANUAL_BROAD')
+            goal_row = create_goal_row(
+                goal_type='SingleCampaign_KW',
+                goal_name=goal_name,
+                config=config,
+                broad_kw=kw_data.unbranded_broad,
+                negative_exact=kw_data.negative_exact,
+                negative_phrase=kw_data.negative_phrase
+            )
+            rows.append(goal_row)
+            rows.append(create_product_row(asin, sku))
+
+        # 8. Competitor - KW (all match types combined as exact)
+        if kw_data.competitor_keywords:
+            goal_name = generate_goal_name(sku, asin, 'COMPETITOR_KW')
+            goal_row = create_goal_row(
+                goal_type='SingleCampaign_KW',
+                goal_name=goal_name,
+                config=config,
+                exact_kw=kw_data.competitor_keywords,
+                negative_exact=kw_data.negative_exact,
+                negative_phrase=kw_data.negative_phrase
+            )
+            rows.append(goal_row)
+            rows.append(create_product_row(asin, sku))
+
+        # 9. Competitor - PAT
+        if kw_data.competitor_pat_targets:
+            goal_name = generate_goal_name(sku, asin, 'COMPETITOR_PAT')
+            goal_row = create_goal_row(
+                goal_type='SingleCampaign_PAT',
+                goal_name=goal_name,
+                config=config,
+                pat_targets=kw_data.competitor_pat_targets,
+                negative_exact=kw_data.negative_exact,
+                negative_phrase=kw_data.negative_phrase
+            )
+            rows.append(goal_row)
+            rows.append(create_product_row(asin, sku))
+
+        # 10. Automatic
+        if kw_data.auto_keywords:
+            goal_name = generate_goal_name(sku, asin, 'AUTO')
+            goal_row = create_goal_row(
+                goal_type='SingleCampaign_KW',
+                goal_name=goal_name,
+                config=config,
+                exact_kw=kw_data.auto_keywords,
                 negative_exact=kw_data.negative_exact,
                 negative_phrase=kw_data.negative_phrase
             )
@@ -234,19 +325,27 @@ def generate_perpetua_csv(
 def generate_empty_goals_for_asins(
     asin_sku_map: Dict[str, str],
     config: GoalConfig,
-    output_path: str,
-    generate_kw: bool = True,
-    generate_pat: bool = True
+    output_path: str
 ) -> str:
     """
     Generate Perpetua CSV with empty goals (no keywords) for manual filling.
+
+    Creates empty templates for all 10 campaign types per SKU:
+    1. Branded - Exact: [SP_BRANDED_EXACT]
+    2. Branded - Phrase: [SP_BRANDED_PHRASE]
+    3. Branded - Broad: [SP_BRANDED_BROAD]
+    4. Branded - PAT: [SP_BRANDED_PAT]
+    5. Unbranded - Exact: [SP_MANUAL_EXACT]
+    6. Unbranded - Phrase: [SP_MANUAL_PHRASE]
+    7. Unbranded - Broad: [SP_MANUAL_BROAD]
+    8. Competitor - KW: [SP_COMPETITOR_KW]
+    9. Competitor - PAT: [SP_COMPETITOR_PAT]
+    10. Automatic: [SP_AUTO]
 
     Args:
         asin_sku_map: Dictionary mapping ASIN -> SKU
         config: Goal configuration
         output_path: Path for output CSV
-        generate_kw: Generate keyword targeting goals
-        generate_pat: Generate PAT goals
 
     Returns:
         Path to generated CSV file
@@ -254,22 +353,11 @@ def generate_empty_goals_for_asins(
     rows = []
 
     for asin, sku in asin_sku_map.items():
-        if generate_kw:
-            # Create placeholder KW goals for each match type
-            for match_type in ['EXACT', 'PHRASE', 'BROAD']:
-                goal_name = generate_goal_name(sku, asin, 'KEYWORD', match_type)
-                goal_row = create_goal_row(
-                    goal_type='SingleCampaign_KW',
-                    goal_name=goal_name,
-                    config=config
-                )
-                rows.append(goal_row)
-                rows.append(create_product_row(asin, sku))
-
-        if generate_pat:
-            goal_name = generate_goal_name(sku, asin, 'PAT', 'ASIN')
+        # Create all 10 campaign types using CAMPAIGN_TYPES constant
+        for campaign_type_id, record_type, _ in CAMPAIGN_TYPES:
+            goal_name = generate_goal_name(sku, asin, campaign_type_id)
             goal_row = create_goal_row(
-                goal_type='SingleCampaign_PAT',
+                goal_type=record_type,
                 goal_name=goal_name,
                 config=config
             )
