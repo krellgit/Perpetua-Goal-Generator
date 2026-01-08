@@ -85,12 +85,27 @@ def extract_keywords_from_amazon_bulk(
     file_path = Path(bulk_file_path)
 
     if file_path.suffix.lower() in ['.xlsx', '.xls']:
-        df = pd.read_excel(file_path)
+        # Handle multi-sheet Excel files - combine all relevant sheets
+        xl = pd.ExcelFile(file_path, engine='openpyxl')
+        dfs = []
+        for sheet in xl.sheet_names:
+            try:
+                sheet_df = pd.read_excel(file_path, sheet_name=sheet, dtype=str, engine='openpyxl')
+                # Only include sheets that have keyword-related columns
+                sheet_df.columns = sheet_df.columns.str.strip().str.lower()
+                if 'keyword text' in sheet_df.columns or 'campaign name' in sheet_df.columns:
+                    dfs.append(sheet_df)
+            except Exception:
+                continue
+        if dfs:
+            df = pd.concat(dfs, ignore_index=True)
+        else:
+            df = pd.read_excel(file_path, dtype=str, engine='openpyxl')
+            df.columns = df.columns.str.strip().str.lower()
     else:
-        df = pd.read_csv(file_path)
-
-    # Normalize column names (Amazon exports can vary)
-    df.columns = df.columns.str.strip().str.lower()
+        df = pd.read_csv(file_path, dtype=str)
+        # Normalize column names (Amazon exports can vary)
+        df.columns = df.columns.str.strip().str.lower()
 
     # Initialize results for all ASINs
     results: Dict[str, CampaignKeywords] = {}
@@ -100,8 +115,8 @@ def extract_keywords_from_amazon_bulk(
     # Common column name variations
     keyword_cols = ['keyword', 'keyword text', 'keyword or product targeting']
     match_type_cols = ['match type', 'matchtype', 'keyword match type']
-    asin_cols = ['asin', 'advertised asin', 'product asin', 'sku']
-    campaign_cols = ['campaign name', 'campaign']
+    asin_cols = ['asin', 'asin (informational only)', 'advertised asin', 'product asin', 'sku']
+    campaign_cols = ['campaign name', 'campaign', 'name']
     target_cols = ['product targeting expression', 'targeting expression', 'target']
 
     # Find actual column names

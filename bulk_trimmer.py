@@ -19,6 +19,7 @@ from progress import ProgressBar, Spinner
 # Common ASIN column name variations in Amazon Ads bulk exports
 ASIN_COLUMN_VARIATIONS = [
     'ASIN',
+    'ASIN (Informational only)',
     'Advertised ASIN',
     'Product ASIN',
     'asin',
@@ -265,24 +266,19 @@ def _process_excel(
 ) -> Dict[str, Any]:
     """Process an Excel bulk file."""
 
-    # For very large Excel files, we need to read in chunks
-    # First, get the sheet info and find the sheet with ASIN column
+    # Find all sheets with ASIN column
     with Spinner("Loading Excel file structure...", style="dots"):
         xl_file = pd.ExcelFile(input_path, engine='openpyxl')
 
-        # Search through sheets to find one with ASIN column
-        sheet_name = None
-        asin_column = None
-
+        # Find all sheets with ASIN column
+        sheets_with_asin = []
         for sheet in xl_file.sheet_names:
             header_df = pd.read_excel(input_path, sheet_name=sheet, nrows=0, engine='openpyxl')
             asin_col = find_asin_column(header_df.columns.tolist())
             if asin_col:
-                sheet_name = sheet
-                asin_column = asin_col
-                break
+                sheets_with_asin.append((sheet, asin_col))
 
-    if not asin_column:
+    if not sheets_with_asin:
         all_sheets_info = []
         for sheet in xl_file.sheet_names:
             hdr = pd.read_excel(input_path, sheet_name=sheet, nrows=0, engine='openpyxl')
@@ -292,25 +288,29 @@ def _process_excel(
             f"Sheets found:\n" + "\n".join(all_sheets_info)
         )
 
-    print(f"✓ Using sheet: '{sheet_name}'")
-    print(f"✓ ASIN column: {asin_column}")
+    print(f"✓ Found {len(sheets_with_asin)} sheets with ASIN data:")
+    for sheet, col in sheets_with_asin:
+        print(f"    - {sheet} (column: {col})")
 
-    stats['asin_column'] = asin_column
+    stats['asin_column'] = sheets_with_asin[0][1]  # Use first for stats
 
-    # For Excel, we need to read the whole file (openpyxl doesn't support chunked reading well)
-    with Spinner("Reading Excel data (this may take a while)...", style="bouncing"):
-        df = pd.read_excel(
-            input_path,
-            sheet_name=sheet_name,
-            dtype=str,
-            keep_default_na=False,
-            engine='openpyxl'
-        )
+    # Read and combine all sheets with ASIN data
+    all_filtered_dfs = []
+    total_original = 0
 
-    stats['original_rows'] = len(df)
-    print(f"✓ Found {len(df):,} data rows")
+    for sheet_name, asin_column in sheets_with_asin:
+        with Spinner(f"Reading '{sheet_name}'...", style="bouncing"):
+            df = pd.read_excel(
+                input_path,
+                sheet_name=sheet_name,
+                dtype=str,
+                keep_default_na=False,
+                engine='openpyxl'
+            )
 
-    with Spinner("Filtering rows...", style="dots"):
+        total_original += len(df)
+        print(f"  ✓ {sheet_name}: {len(df):,} rows")
+
         # Normalize ASIN values for comparison
         df_asins = df[asin_column].str.strip().str.upper()
 
@@ -319,14 +319,27 @@ def _process_excel(
         filtered_df = df[mask]
 
         # Count metadata rows
-        stats['metadata_rows'] = (df_asins[mask] == '').sum()
-        stats['filtered_rows'] = len(filtered_df)
+        stats['metadata_rows'] += (df_asins[mask] == '').sum()
 
-    print(f"✓ Filtered to {len(filtered_df):,} rows")
+        if not filtered_df.empty:
+            all_filtered_dfs.append(filtered_df)
+
+    stats['original_rows'] = total_original
+
+    # Combine all filtered data
+    if all_filtered_dfs:
+        with Spinner("Combining filtered data...", style="dots"):
+            combined_df = pd.concat(all_filtered_dfs, ignore_index=True)
+        stats['filtered_rows'] = len(combined_df)
+        print(f"✓ Combined: {len(combined_df):,} rows from {len(all_filtered_dfs)} sheets")
+    else:
+        print("Warning: No matching rows found!")
+        combined_df = pd.DataFrame()
+        stats['filtered_rows'] = 0
 
     # Write output
     with Spinner("Writing output file...", style="dots"):
-        filtered_df.to_excel(output_path, index=False, engine='openpyxl')
+        combined_df.to_excel(output_path, index=False, engine='openpyxl')
 
     print(f"✓ Output saved")
 
