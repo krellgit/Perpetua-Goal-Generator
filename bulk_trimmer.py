@@ -337,9 +337,13 @@ def _process_excel(
         combined_df = pd.DataFrame()
         stats['filtered_rows'] = 0
 
-    # Write output
+    # Write output - use CSV if output path ends with .csv, otherwise Excel
+    output_ext = output_path.suffix.lower()
     with Spinner("Writing output file...", style="dots"):
-        combined_df.to_excel(output_path, index=False, engine='openpyxl')
+        if output_ext == '.csv':
+            combined_df.to_csv(output_path, index=False)
+        else:
+            combined_df.to_excel(output_path, index=False, engine='openpyxl')
 
     print(f"✓ Output saved")
 

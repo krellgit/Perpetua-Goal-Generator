@@ -5,12 +5,12 @@ Simple runner for Perpetua Goal Generator.
 Default file names:
   - ASINList.csv  (your ASIN/SKU list)
   - bulk.xlsx     (Amazon bulk export)
-  - trimmed.xlsx  (trimmed output)
+  - trimmed.csv   (trimmed output - CSV to avoid Excel row limits)
   - goals.csv     (Perpetua output)
 
 Usage:
-  python run.py trim       # Trim bulk.xlsx -> trimmed.xlsx
-  python run.py generate   # Generate goals.csv from trimmed.xlsx
+  python run.py trim       # Trim bulk.xlsx -> trimmed.csv
+  python run.py generate   # Generate goals.csv from trimmed.csv
   python run.py all        # Do both: trim then generate
   python run.py template   # Generate empty template (no keywords)
 """
@@ -22,7 +22,7 @@ from pathlib import Path
 # Default file names
 ASIN_FILE = "ASINList.csv"
 BULK_FILE = "bulk.xlsx"
-TRIMMED_FILE = "trimmed.xlsx"
+TRIMMED_FILE = "trimmed.csv"  # CSV to avoid Excel row limits
 OUTPUT_FILE = "goals.csv"
 
 
