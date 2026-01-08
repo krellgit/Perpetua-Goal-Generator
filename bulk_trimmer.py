@@ -266,22 +266,36 @@ def _process_excel(
     """Process an Excel bulk file."""
 
     # For very large Excel files, we need to read in chunks
-    # First, get the sheet info
+    # First, get the sheet info and find the sheet with ASIN column
     with Spinner("Loading Excel file structure...", style="dots"):
         xl_file = pd.ExcelFile(input_path, engine='openpyxl')
-        sheet_name = xl_file.sheet_names[0]
 
-        # Read header row
-        header_df = pd.read_excel(input_path, sheet_name=sheet_name, nrows=0, engine='openpyxl')
-        asin_column = find_asin_column(header_df.columns.tolist())
+        # Search through sheets to find one with ASIN column
+        sheet_name = None
+        asin_column = None
+
+        for sheet in xl_file.sheet_names:
+            header_df = pd.read_excel(input_path, sheet_name=sheet, nrows=0, engine='openpyxl')
+            asin_col = find_asin_column(header_df.columns.tolist())
+            if asin_col:
+                sheet_name = sheet
+                asin_column = asin_col
+                break
 
     if not asin_column:
+        all_sheets_info = []
+        for sheet in xl_file.sheet_names:
+            hdr = pd.read_excel(input_path, sheet_name=sheet, nrows=0, engine='openpyxl')
+            all_sheets_info.append(f"  - {sheet}: {list(hdr.columns)[:5]}...")
         raise ValueError(
-            f"Could not find ASIN column. Available columns: {header_df.columns.tolist()}"
+            f"Could not find ASIN column in any sheet.\n"
+            f"Sheets found:\n" + "\n".join(all_sheets_info)
         )
 
-    stats['asin_column'] = asin_column
+    print(f"✓ Using sheet: '{sheet_name}'")
     print(f"✓ ASIN column: {asin_column}")
+
+    stats['asin_column'] = asin_column
 
     # For Excel, we need to read the whole file (openpyxl doesn't support chunked reading well)
     with Spinner("Reading Excel data (this may take a while)...", style="bouncing"):
