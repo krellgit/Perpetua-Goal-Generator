@@ -9,7 +9,9 @@ ENV/
 
 # Generated files
 *.csv
-!ASIN and SKU.csv
+!ASINList.csv
+bulk.xlsx
+trimmed.xlsx
 
 # IDE
 .idea/
