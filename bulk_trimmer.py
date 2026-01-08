@@ -28,6 +28,30 @@ ASIN_COLUMN_VARIATIONS = [
     'Asin',
 ]
 
+# Entity types we want to keep (keywords and targeting)
+ENTITY_TYPES_TO_KEEP = [
+    'Keyword',
+    'Negative Keyword',
+    'Product Targeting',
+    'Campaign Negative Keyword',
+]
+
+# Columns to remove (read-only metrics starting from column AP)
+# These are informational/metrics columns we don't need
+COLUMNS_TO_REMOVE = [
+    'Impressions',
+    'Clicks',
+    'Click-through Rate',
+    'Spend',
+    'Sales',
+    'Orders',
+    'Units',
+    'Conversion Rate',
+    'ACOS',
+    'CPC',
+    'ROAS',
+]
+
 
 def load_asin_list_from_csv(csv_path: str) -> List[str]:
     """
@@ -145,7 +169,6 @@ def trim_bulk_file(
         'output_size_mb': 0,
         'size_reduction_percent': 0,
         'asin_column': None,
-        'metadata_rows': 0,
     }
 
     if file_ext == '.csv':
@@ -169,9 +192,7 @@ def trim_bulk_file(
     print("-" * 50)
     print(f"ASIN column used: {stats['asin_column']}")
     print(f"Original rows: {stats['original_rows']:,}")
-    print(f"Metadata rows kept: {stats['metadata_rows']:,}")
-    print(f"Filtered data rows: {stats['filtered_rows'] - stats['metadata_rows']:,}")
-    print(f"Total output rows: {stats['filtered_rows']:,}")
+    print(f"Filtered rows: {stats['filtered_rows']:,}")
     print(f"Original size: {stats['original_size_mb']:.2f} MB")
     print(f"Output size: {stats['output_size_mb']:.2f} MB")
     print(f"Size reduction: {stats['size_reduction_percent']:.1f}%")
@@ -311,18 +332,27 @@ def _process_excel(
         total_original += len(df)
         print(f"  ✓ {sheet_name}: {len(df):,} rows")
 
+        # Filter by Entity type first (only keep Keyword and Targeting rows)
+        if 'Entity' in df.columns:
+            entity_mask = df['Entity'].isin(ENTITY_TYPES_TO_KEEP)
+            df = df[entity_mask]
+            print(f"    After entity filter: {len(df):,} rows")
+
         # Normalize ASIN values for comparison
         df_asins = df[asin_column].str.strip().str.upper()
 
-        # Keep rows where ASIN is in our list OR ASIN is empty (metadata rows)
-        mask = df_asins.isin(asin_set) | (df_asins == '')
+        # Keep rows where ASIN is in our list
+        mask = df_asins.isin(asin_set)
         filtered_df = df[mask]
 
-        # Count metadata rows
-        stats['metadata_rows'] += (df_asins[mask] == '').sum()
+        # Remove read-only columns (metrics)
+        cols_to_drop = [c for c in filtered_df.columns if c in COLUMNS_TO_REMOVE]
+        if cols_to_drop:
+            filtered_df = filtered_df.drop(columns=cols_to_drop)
 
         if not filtered_df.empty:
             all_filtered_dfs.append(filtered_df)
+            print(f"    After ASIN filter: {len(filtered_df):,} rows")
 
     stats['original_rows'] = total_original
 
@@ -331,7 +361,11 @@ def _process_excel(
         with Spinner("Combining filtered data...", style="dots"):
             combined_df = pd.concat(all_filtered_dfs, ignore_index=True)
         stats['filtered_rows'] = len(combined_df)
-        print(f"✓ Combined: {len(combined_df):,} rows from {len(all_filtered_dfs)} sheets")
+
+        # Count columns removed
+        cols_removed = len(COLUMNS_TO_REMOVE)
+        print(f"✓ Combined: {len(combined_df):,} rows, {len(combined_df.columns)} columns")
+        print(f"  (Removed {cols_removed} read-only metric columns)")
     else:
         print("Warning: No matching rows found!")
         combined_df = pd.DataFrame()
