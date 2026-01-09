@@ -22,3 +22,12 @@ trimmed.xlsx
 # OS
 .DS_Store
 Thumbs.db
+
+# Node.js
+node_modules/
+
+# Debug/test files
+debug-*.png
+upload_progress.json
+*.png
+!SS 1.png

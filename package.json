@@ -1,0 +1,17 @@
+{
+  "name": "perpetua-goal-uploader",
+  "version": "1.0.0",
+  "description": "Browser automation for uploading goals to Perpetua",
+  "main": "perpetua-uploader.js",
+  "scripts": {
+    "upload": "node perpetua-uploader.js",
+    "upload:dry": "node perpetua-uploader.js --dry-run",
+    "install-browsers": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "csv-parse": "^5.5.3",
+    "playwright": "^1.40.0"
+  },
+  "author": "",
+  "license": "ISC"
+}

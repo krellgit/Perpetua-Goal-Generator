@@ -206,6 +206,61 @@ After upload, check these columns:
 2. Column AJ: Errors
 3. Column AK: Warnings
 
+## Browser Automation Uploader
+
+For creating NEW goals (which bulk upload doesn't support), use the Playwright-based browser automation:
+
+### Setup
+
+```bash
+# Install Node.js dependencies
+npm install
+
+# Install Chromium browser for Playwright
+npm run install-browsers
+```
+
+### Usage
+
+```bash
+# Run the uploader (will prompt for credentials)
+npm run upload
+
+# Dry run - see what would be created without doing anything
+npm run upload:dry
+
+# Start from a specific row (e.g., resume after error)
+node perpetua-uploader.js --start-row=100
+```
+
+### How It Works
+
+1. Prompts for your Perpetua email and password
+2. Opens a visible Chrome browser
+3. Logs in to Perpetua
+4. Navigates to Sponsored Products > Goals
+5. For each row in `agent_task_list.csv`:
+   5.1. Clicks "New Goal"
+   5.2. Fills in goal title, ASIN, budget, ACOS
+   5.3. Selects Keyword or PAT targeting
+   5.4. Configures match types and negatives
+   5.5. Creates the goal
+6. Saves progress to `upload_progress.json` (can resume if interrupted)
+
+### Features
+
+1. **Resume capability** - If the script stops, it remembers where it left off
+2. **Headed mode** - Watch the browser work so you can catch issues
+3. **Error handling** - If a goal fails, you can choose to continue or stop
+4. **Progress tracking** - See which goal is being processed
+
+### Troubleshooting
+
+If the script fails to find an element:
+1. The Perpetua UI may have changed - selectors may need updating
+2. Try increasing the `slowMo` value in the config (default: 100ms)
+3. Check `upload_progress.json` to see which goal failed
+
 ## Reference
 
 Based on [Perpetua Bulk Operations Documentation](https://help.perpetua.io/en/articles/7956795-bulk-operations-launch-edit-your-goals-segments#h_94297ee066)
