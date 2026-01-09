@@ -1,70 +1,50 @@
-# Perpetua-Goal-Generator Checkpoints
+# Perpetua Goal Generator Checkpoints
 
-## 2026-01-10T03:25:43
+## PGG-001 - 2026-01-10T12:30:00+08:00
 
-**Goal:** Create Playwright browser automation script to upload 1,265 goals to Perpetua via UI (no API available)
+**Summary:** Added direct API uploader for Perpetua goals
 
-**Current status:** In progress. Script runs but has issues with some UI element interactions.
+**Goal:** Replace unreliable browser automation with direct API calls for creating Perpetua goals
 
-**What changed:**
-1. Created `perpetua-uploader.js` - Playwright automation script
-2. Created `package.json` with Playwright and csv-parse dependencies
-3. Updated README with browser automation setup instructions
-4. Script successfully: logs in, navigates to Goals, clicks New Goal, fills goal name, clicks Custom, searches ASIN
-5. Script has issues with: clicking "Select" for ASIN (sometimes works), match type checkboxes, harvesting toggle
+**Status:** Complete
 
-**Files created/modified:**
-1. `perpetua-uploader.js` - Main automation script
-2. `package.json` - Node.js dependencies
-3. `README.md` - Added browser automation section
+**Changes:**
+1. Created `perpetua-api-uploader.js` - Direct API script for goal creation
+2. Added GraphQL product search to get product_id from ASIN
+3. Added support for keyword campaigns with proper match types (EXACT, PHRASE, BROAD)
+4. Added support for PAT campaigns with TARGETING_EXPRESSION match type
+5. Added negative keywords (exact + phrase) support
+6. Added negative ASINs support for PAT campaigns
+7. Added keyword harvesting settings:
+   - BRANDED campaigns: MANUALLY_APPROVE (requires approval)
+   - COMPETITOR/MANUAL campaigns: AUTOMATICALLY_ADD (auto-harvests)
+8. Added progress tracking with resume capability
+9. Added product ID caching for performance
+10. Auto-skips unavailable products and continues
 
-**Key features implemented:**
-1. Preset credentials in CONFIG
-2. --start-row and --limit CLI args for testing
-3. --dry-run mode
-4. Progress saving to upload_progress.json
-5. Resume capability
+**Files modified:**
+1. perpetua-api-uploader.js (new)
+2. package.json (added api scripts)
+3. perpetua-uploader.js (browser automation improvements - not used)
 
-**Blockers:**
-1. Harvesting toggle click causes page to reset (skipped for now)
-2. Match type checkbox toggling needs testing
-3. "Select" button for ASIN selection inconsistent
+**Key decisions:**
+1. Direct API is faster and more reliable than browser automation
+2. GraphQL used for product search (apollo.perpetua.io)
+3. REST API used for goal creation (crispy.perpetua.io)
+4. PAT targets use `keyword_text` with `match_type: TARGETING_EXPRESSION`
+5. Negative ASINs also use TARGETING_EXPRESSION in negative_keyword_overrides
+6. BRANDED campaigns use MANUALLY_APPROVE to prevent non-branded contamination
+7. Auth token needs manual refresh from DevTools when expired
 
-**Next steps:**
-1. Test match type selection with current click-on-label approach
-2. Verify "Add Keyword Targets" button click works
-3. Verify "Launch Goal" button click works
-4. If goal creation works, re-enable harvesting and negatives one at a time
-5. Run on full dataset once stable
-
----
-
-## 2026-01-10T12:45:00
-
-**Goal:** Fix branded keywords in agent_task_list.csv - branded campaigns only had "nature trut" as a single keyword instead of multiple branded keyword variations.
-
-**Current status:** Completed. Agent task list regenerated with correct branded keywords.
-
-**What changed:**
-1. Investigated branded keyword issue - discovered source Amazon bulk export only contained "nature trut" as positive branded keyword
-2. Found branded keywords were stored as negative keywords in Competitor campaigns (to exclude branded terms from competitor targeting)
-3. Extracted 9 branded keywords from competitor negatives
-4. Removed "naturesfortune" and "truth" per user request
-5. Regenerated agent_task_list.csv with 7 branded keywords for all branded campaigns
-
-**Branded keywords now used:**
-1. nature trut
-2. nature truth
-3. nature's truth
-4. natures truth
-5. nature's reward
-6. naturesreward
-7. naturestruth
+**API Endpoints discovered:**
+1. Product search: `POST https://apollo.perpetua.io/` (GraphQL)
+2. Goal creation: `POST https://crispy.perpetua.io/engine/v3/geo_companies/{id}/uni_goals/MULTI_AD_GROUP_CUSTOM_GOAL/`
 
 **Blockers:** None
 
 **Next steps:**
-1. User to test the agent_task_list.csv with their automation agent
-2. If Perpetua CSV upload is needed later, may need to revisit the format issues (MAG_AdGroup_MANUAL invalid type, keywords on wrong row level)
+1. Monitor full batch upload (1265 goals)
+2. Consider adding batch retry for failed goals
+3. Add token refresh automation if needed
 
 ---

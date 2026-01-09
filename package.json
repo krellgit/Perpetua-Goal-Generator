@@ -6,7 +6,9 @@
   "scripts": {
     "upload": "node perpetua-uploader.js",
     "upload:dry": "node perpetua-uploader.js --dry-run",
-    "install-browsers": "npx playwright install chromium"
+    "install-browsers": "npx playwright install chromium",
+    "api": "node perpetua-api-uploader.js",
+    "api:dry": "node perpetua-api-uploader.js --dry-run"
   },
   "dependencies": {
     "csv-parse": "^5.5.3",

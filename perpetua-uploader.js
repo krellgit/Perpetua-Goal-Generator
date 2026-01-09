@@ -369,38 +369,10 @@ class PerpetuaUploader {
     }
     await this.page.waitForTimeout(500);
 
-    // Set Target ACOS - the input is after the "%" symbol in the Target ACoS section
-    console.log(`  Setting Target ACOS: ${targetAcos}%...`);
-    // Find the input in the Target ACoS section (it's the second input after "Target ACoS" text)
-    const acosSection = await this.page.$('text="Target ACoS" >> xpath=ancestor::div[1]');
-    if (acosSection) {
-      const acosInput = await acosSection.$('input:last-of-type');
-      if (acosInput) {
-        await acosInput.click();
-        await acosInput.fill(targetAcos.toString());
-      }
-    } else {
-      // Fallback: find input with % placeholder nearby
-      await this.page.fill('text="Target ACoS" >> xpath=following::input[2]', targetAcos.toString()).catch(() => {});
-    }
-
-    // Set Daily Budget - the input is after the "$" symbol
-    console.log(`  Setting Daily Budget: $${dailyBudget}...`);
-    const budgetSection = await this.page.$('text="Daily Budget" >> xpath=ancestor::div[1]');
-    if (budgetSection) {
-      const budgetInput = await budgetSection.$('input:last-of-type');
-      if (budgetInput) {
-        await budgetInput.click();
-        await budgetInput.fill(dailyBudget.toString());
-      }
-    } else {
-      // Fallback
-      await this.page.fill('text="Daily Budget" >> xpath=following::input[2]', dailyBudget.toString()).catch(() => {});
-    }
-
     await this.page.keyboard.press('PageDown');
     await this.page.waitForTimeout(500);
 
+    // FIRST: Add keywords/targets (this may cause form re-render, so do it before setting ACOS/Budget)
     if (isPAT) {
       // PAT: Click "Add Products" and paste targets
       console.log('  Adding PAT targets...');
@@ -419,29 +391,133 @@ class PerpetuaUploader {
       // Keywords: Configure match types in "Select Match Types" section
       console.log(`  Configuring match type: ${matchType}...`);
 
-      // Click to uncheck/check the appropriate match types
-      // Based on screenshot: checkboxes are labeled "Exact Match", "Phrase Match", "Broad Match"
+      // Scroll to the Select Match Types section first
+      await this.page.evaluate(() => {
+        const heading = Array.from(document.querySelectorAll('*')).find(
+          el => el.textContent.includes('Select Match Types') && el.textContent.length < 50
+        );
+        if (heading) heading.scrollIntoView({ block: 'center' });
+      });
+      await this.page.waitForTimeout(500);
 
+      // Strategy: Find the checkbox row container and click each checkbox we want to uncheck
+      // The checkboxes are in a row: [✓ Exact Match] [✓ Phrase Match] [✓ Broad Match]
+      // We need to click the checkbox icon/element, not the label text
+
+      const matchTypesToUncheck = [];
       if (matchType === 'EXACT') {
-        // Uncheck Phrase and Broad, ensure Exact is checked
-        await this.page.click('text="Phrase Match"').catch(() => {});
-        await this.page.waitForTimeout(200);
-        await this.page.click('text="Broad Match"').catch(() => {});
-        await this.page.waitForTimeout(200);
+        matchTypesToUncheck.push('Phrase Match', 'Broad Match');
       } else if (matchType === 'PHRASE') {
-        // Uncheck Exact and Broad, ensure Phrase is checked
-        await this.page.click('text="Exact Match"').catch(() => {});
-        await this.page.waitForTimeout(200);
-        await this.page.click('text="Broad Match"').catch(() => {});
-        await this.page.waitForTimeout(200);
+        matchTypesToUncheck.push('Exact Match', 'Broad Match');
       } else if (matchType === 'BROAD') {
-        // Uncheck Exact and Phrase, ensure Broad is checked
-        await this.page.click('text="Exact Match"').catch(() => {});
-        await this.page.waitForTimeout(200);
-        await this.page.click('text="Phrase Match"').catch(() => {});
-        await this.page.waitForTimeout(200);
+        matchTypesToUncheck.push('Exact Match', 'Phrase Match');
       }
 
+      for (const labelToUncheck of matchTypesToUncheck) {
+        console.log(`    Unchecking ${labelToUncheck}...`);
+
+        // Method 1: Use Playwright's label locator to find associated checkbox
+        try {
+          const labelLocator = this.page.locator(`label:has-text("${labelToUncheck}")`);
+          const count = await labelLocator.count();
+          if (count > 0) {
+            await labelLocator.first().click();
+            console.log(`      Clicked via label locator`);
+            await this.page.waitForTimeout(300);
+            continue;
+          }
+        } catch (e) {
+          // Continue to next method
+        }
+
+        // Method 2: Find the text and click its parent container (which includes the checkbox)
+        const clicked = await this.page.evaluate((labelText) => {
+          // Find the span/text element containing the label
+          const textElements = Array.from(document.querySelectorAll('span, div, p')).filter(
+            el => el.textContent.trim() === labelText && el.children.length === 0
+          );
+
+          for (const textEl of textElements) {
+            // The checkbox is usually a sibling or in the same parent container
+            // Look for the clickable container that wraps both checkbox and label
+            let container = textEl.parentElement;
+
+            // Check up to 3 levels
+            for (let i = 0; i < 3 && container; i++) {
+              // Look for SVG (checkbox icon), input, or clickable element
+              const svg = container.querySelector('svg');
+              const input = container.querySelector('input[type="checkbox"]');
+              const clickableDiv = container.querySelector('[role="checkbox"]');
+
+              if (svg || input || clickableDiv) {
+                // Click the container itself (this usually toggles the checkbox)
+                container.click();
+                return { method: 'container', level: i };
+              }
+              container = container.parentElement;
+            }
+
+            // Fallback: try clicking the previous sibling (checkbox before label)
+            const prevSibling = textEl.previousElementSibling;
+            if (prevSibling) {
+              prevSibling.click();
+              return { method: 'prevSibling' };
+            }
+          }
+          return null;
+        }, labelToUncheck);
+
+        if (clicked) {
+          console.log(`      Clicked via JS: ${clicked.method} (level: ${clicked.level || 'n/a'})`);
+        } else {
+          // Method 3: Try direct text click which might toggle the checkbox in some UIs
+          try {
+            await this.page.click(`text="${labelToUncheck}"`, { timeout: 2000 });
+            console.log(`      Clicked via text selector`);
+          } catch (e) {
+            console.log(`      Failed to click ${labelToUncheck}`);
+          }
+        }
+
+        await this.page.waitForTimeout(300);
+      }
+
+      // Verify the checkbox states after clicking
+      const finalStates = await this.page.evaluate(() => {
+        const states = {};
+        const labels = ['Exact Match', 'Phrase Match', 'Broad Match'];
+
+        for (const label of labels) {
+          const textEl = Array.from(document.querySelectorAll('span, div')).find(
+            el => el.textContent.trim() === label && el.children.length === 0
+          );
+          if (textEl) {
+            let container = textEl.parentElement;
+            for (let i = 0; i < 3 && container; i++) {
+              const svg = container.querySelector('svg');
+              const input = container.querySelector('input[type="checkbox"]');
+              if (input) {
+                states[label] = input.checked;
+                break;
+              }
+              if (svg) {
+                // Check if SVG indicates checked state (e.g., has checkmark path or fill color)
+                const path = svg.querySelector('path');
+                const isChecked = svg.getAttribute('fill') !== 'none' ||
+                                  svg.classList.contains('checked') ||
+                                  container.classList.contains('checked') ||
+                                  container.getAttribute('data-state') === 'checked';
+                states[label] = isChecked;
+                break;
+              }
+              container = container.parentElement;
+            }
+          }
+        }
+        return states;
+      });
+
+      console.log(`  Final checkbox states: ${JSON.stringify(finalStates)}`);
       console.log(`  Match type set to ${matchType} only`);
       await this.page.waitForTimeout(500);
 
@@ -464,6 +540,98 @@ class PerpetuaUploader {
             await this.page.click('button:has-text("Add Keyword")').catch(() => {});
           });
           await this.page.waitForTimeout(1000);
+        }
+      }
+    }
+
+    // NOW set ACOS and Budget (AFTER keywords/targets are added to avoid form reset)
+    // Scroll back up to the ACOS/Budget section
+    await this.page.evaluate(() => {
+      const heading = Array.from(document.querySelectorAll('*')).find(
+        el => el.textContent.includes('Target ACoS') && el.textContent.length < 50
+      );
+      if (heading) heading.scrollIntoView({ block: 'center' });
+    });
+    await this.page.waitForTimeout(500);
+
+    // Set Target ACOS using JavaScript to find the right input
+    console.log(`  Setting Target ACOS: ${targetAcos}%...`);
+    const acosSet = await this.page.evaluate((value) => {
+      // Find "Target ACoS" label and then find the input nearby
+      const labels = Array.from(document.querySelectorAll('*')).filter(
+        el => el.textContent.trim() === 'Target ACoS' && el.children.length === 0
+      );
+      for (const label of labels) {
+        // Look for input in parent containers
+        let parent = label.parentElement;
+        for (let i = 0; i < 5 && parent; i++) {
+          const inputs = parent.querySelectorAll('input[type="text"], input[type="number"], input:not([type])');
+          for (const input of inputs) {
+            // Skip inputs that are clearly not the ACOS input (e.g., search boxes)
+            if (input.placeholder?.toLowerCase().includes('search')) continue;
+            if (input.placeholder?.includes('%') || input.closest('[class*="acos" i]') ||
+                parent.textContent.includes('Target ACoS')) {
+              input.focus();
+              input.value = value;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              return true;
+            }
+          }
+          parent = parent.parentElement;
+        }
+      }
+      return false;
+    }, targetAcos.toString());
+    console.log(`    ACOS set: ${acosSet}`);
+
+    // Set Daily Budget using JavaScript
+    console.log(`  Setting Daily Budget: $${dailyBudget}...`);
+    const budgetSet = await this.page.evaluate((value) => {
+      // Find "Daily Budget" label and then find the input nearby
+      const labels = Array.from(document.querySelectorAll('*')).filter(
+        el => el.textContent.trim() === 'Daily Budget' && el.children.length === 0
+      );
+      for (const label of labels) {
+        let parent = label.parentElement;
+        for (let i = 0; i < 5 && parent; i++) {
+          const inputs = parent.querySelectorAll('input[type="text"], input[type="number"], input:not([type])');
+          for (const input of inputs) {
+            if (input.placeholder?.toLowerCase().includes('search')) continue;
+            if (input.placeholder?.includes('$') || input.closest('[class*="budget" i]') ||
+                parent.textContent.includes('Daily Budget')) {
+              input.focus();
+              input.value = value;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              return true;
+            }
+          }
+          parent = parent.parentElement;
+        }
+      }
+      return false;
+    }, dailyBudget.toString());
+    console.log(`    Budget set: ${budgetSet}`);
+
+    // If JavaScript approach didn't work, try direct Playwright approach
+    if (!acosSet || !budgetSet) {
+      console.log('  Trying Playwright fallback for ACOS/Budget...');
+      // Find all visible inputs and try to identify ACOS and Budget by position
+      const allInputs = await this.page.$$('input:visible');
+      console.log(`    Found ${allInputs.length} visible inputs`);
+
+      for (const input of allInputs) {
+        const placeholder = await input.getAttribute('placeholder');
+        if (!acosSet && placeholder?.includes('%')) {
+          await input.click();
+          await input.fill(targetAcos.toString());
+          console.log('    Filled ACOS via placeholder match');
+        }
+        if (!budgetSet && placeholder?.includes('$')) {
+          await input.click();
+          await input.fill(dailyBudget.toString());
+          console.log('    Filled Budget via placeholder match');
         }
       }
     }
