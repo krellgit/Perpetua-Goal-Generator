@@ -8,12 +8,40 @@ include ASINs from a provided ASIN list.
 import os
 import sys
 import csv
+import re
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 import pandas as pd
 
 from progress import ProgressBar, Spinner
+
+
+def extract_asin_from_campaign_name(campaign_name: str) -> Optional[str]:
+    """
+    Extract ASIN from campaign name.
+
+    Campaign names often contain ASINs in patterns like:
+    - SKU-ASIN-XX-XX - Perpetua - SP - Manual
+    - Contains ASIN anywhere (B0XXXXXXXXX format)
+
+    Args:
+        campaign_name: The campaign name to extract ASIN from.
+
+    Returns:
+        The extracted ASIN or None if not found.
+    """
+    if not campaign_name or pd.isna(campaign_name):
+        return None
+
+    campaign_name = str(campaign_name)
+
+    # Look for ASIN pattern (B followed by 9 alphanumeric chars)
+    asin_match = re.search(r'\b(B[0-9A-Z]{9})\b', campaign_name.upper())
+    if asin_match:
+        return asin_match.group(1)
+
+    return None
 
 
 # Common ASIN column name variations in Amazon Ads bulk exports
@@ -33,6 +61,7 @@ ENTITY_TYPES_TO_KEEP = [
     'Keyword',
     'Negative Keyword',
     'Product Targeting',
+    'Negative Product Targeting',
     'Campaign Negative Keyword',
 ]
 
@@ -169,6 +198,7 @@ def trim_bulk_file(
         'output_size_mb': 0,
         'size_reduction_percent': 0,
         'asin_column': None,
+        'metadata_rows': 0,
     }
 
     if file_ext == '.csv':
@@ -244,18 +274,38 @@ def _process_csv(
         dtype=str,
         keep_default_na=False
     ):
+        # Filter by Entity type first (only keep Keyword and Targeting rows)
+        if 'Entity' in chunk.columns:
+            entity_mask = chunk['Entity'].isin(ENTITY_TYPES_TO_KEEP)
+            chunk = chunk[entity_mask]
+
+        if chunk.empty:
+            rows_processed += chunk_size
+            progress.update(chunk_size)
+            continue
+
         # Normalize ASIN values for comparison
         chunk_asins = chunk[asin_column].str.strip().str.upper()
 
-        # Keep rows where ASIN is in our list OR ASIN is empty (metadata rows)
-        mask = chunk_asins.isin(asin_set) | (chunk_asins == '')
+        # For rows where ASIN is empty, try to extract from campaign name
+        campaign_name_col = 'Campaign Name (Informational only)'
+        if campaign_name_col in chunk.columns:
+            empty_asin_mask = (chunk_asins == '') | chunk_asins.isna()
+            if empty_asin_mask.any():
+                extracted_asins = chunk.loc[empty_asin_mask, campaign_name_col].apply(
+                    extract_asin_from_campaign_name
+                )
+                chunk_asins.loc[empty_asin_mask] = extracted_asins.fillna('')
+
+        # Keep rows where ASIN is in our list
+        mask = chunk_asins.isin(asin_set)
         filtered_chunk = chunk[mask]
 
-        # Count metadata rows (empty ASIN)
-        metadata_count = (chunk_asins[mask] == '').sum()
-        stats['metadata_rows'] += metadata_count
-
+        # Remove read-only columns (metrics)
         if not filtered_chunk.empty:
+            cols_to_drop = [c for c in filtered_chunk.columns if c in COLUMNS_TO_REMOVE]
+            if cols_to_drop:
+                filtered_chunk = filtered_chunk.drop(columns=cols_to_drop)
             filtered_chunks.append(filtered_chunk)
 
         rows_processed += len(chunk)
@@ -269,6 +319,7 @@ def _process_csv(
         result_df = pd.concat(filtered_chunks, ignore_index=True)
         result_df.to_csv(output_path, index=False)
         stats['filtered_rows'] = len(result_df)
+        print(f"  Columns retained: {len(result_df.columns)}")
     else:
         print("Warning: No matching rows found!")
         # Write empty file with headers
@@ -338,8 +389,19 @@ def _process_excel(
             df = df[entity_mask]
             print(f"    After entity filter: {len(df):,} rows")
 
-        # Normalize ASIN values for comparison
+        # Get ASIN values - first try the ASIN column, then campaign name
         df_asins = df[asin_column].str.strip().str.upper()
+
+        # For rows where ASIN is empty, try to extract from campaign name
+        campaign_name_col = 'Campaign Name (Informational only)'
+        if campaign_name_col in df.columns:
+            empty_asin_mask = (df_asins == '') | df_asins.isna()
+            if empty_asin_mask.any():
+                # Extract ASINs from campaign names for rows with empty ASIN
+                extracted_asins = df.loc[empty_asin_mask, campaign_name_col].apply(
+                    extract_asin_from_campaign_name
+                )
+                df_asins.loc[empty_asin_mask] = extracted_asins.fillna('')
 
         # Keep rows where ASIN is in our list
         mask = df_asins.isin(asin_set)

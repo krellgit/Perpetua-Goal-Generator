@@ -23,7 +23,8 @@ from keyword_extractor import (
 from perpetua_generator import (
     GoalConfig,
     generate_perpetua_csv,
-    generate_empty_goals_for_asins
+    generate_empty_goals_for_asins,
+    load_negative_asins
 )
 from bulk_trimmer import (
     load_asin_list_from_csv,
@@ -50,17 +51,19 @@ Examples:
     python main.py generate --asin-sku "ASIN and SKU.csv" --output goals.csv \\
         --budget 15 --acos 25 --min-bid 0.30 --max-bid 3.00
 
-10-Campaign Structure per SKU:
-  1. [SP_BRANDED_EXACT] JN     - Branded exact keywords
-  2. [SP_BRANDED_PHRASE] JN    - Branded phrase keywords
-  3. [SP_BRANDED_BROAD] JN     - Branded broad keywords
-  4. [SP_BRANDED_PAT] JN       - Branded PAT targets
-  5. [SP_MANUAL_EXACT] JN      - Unbranded exact keywords
-  6. [SP_MANUAL_PHRASE] JN     - Unbranded phrase keywords
-  7. [SP_MANUAL_BROAD] JN      - Unbranded broad keywords
-  8. [SP_COMPETITOR_KW] JN     - Competitor keywords (all match types)
-  9. [SP_COMPETITOR_PAT] JN    - Competitor PAT targets
-  10. [SP_AUTO] JN             - Automatic campaign keywords
+12-Campaign Structure per SKU:
+  1. [SP_BRANDED_EXACT] JN      - Branded exact keywords
+  2. [SP_BRANDED_PHRASE] JN     - Branded phrase keywords
+  3. [SP_BRANDED_BROAD] JN      - Branded broad keywords
+  4. [SP_BRANDED_PAT] JN        - Branded PAT targets
+  5. [SP_MANUAL_EXACT] JN       - Unbranded exact keywords
+  6. [SP_MANUAL_PHRASE] JN      - Unbranded phrase keywords
+  7. [SP_MANUAL_BROAD] JN       - Unbranded broad keywords
+  8. [SP_COMPETITOR_EXACT] JN   - Competitor exact keywords
+  9. [SP_COMPETITOR_PHRASE] JN  - Competitor phrase keywords
+  10. [SP_COMPETITOR_BROAD] JN  - Competitor broad keywords
+  11. [SP_COMPETITOR_PAT] JN    - Competitor PAT targets
+  12. [SP_AUTO] JN              - Automatic campaign keywords
         """
     )
 
@@ -135,6 +138,10 @@ Examples:
         choices=['Enabled', 'Paused'],
         default='Enabled',
         help='Goal status (default: Enabled)'
+    )
+    gen_parser.add_argument(
+        '--negatives', '-n',
+        help='Path to negative ASINs file for PAT campaigns (optional)'
     )
 
     return parser.parse_args()
@@ -222,7 +229,10 @@ def main():
                 len(kw.unbranded_exact) + len(kw.unbranded_phrase) + len(kw.unbranded_broad)
                 for kw in campaign_keywords.values()
             )
-            total_competitor = sum(len(kw.competitor_keywords) for kw in campaign_keywords.values())
+            total_competitor = sum(
+                len(kw.competitor_exact) + len(kw.competitor_phrase) + len(kw.competitor_broad)
+                for kw in campaign_keywords.values()
+            )
             total_branded_pat = sum(len(kw.branded_pat_targets) for kw in campaign_keywords.values())
             total_competitor_pat = sum(len(kw.competitor_pat_targets) for kw in campaign_keywords.values())
             total_auto = sum(len(kw.auto_keywords) for kw in campaign_keywords.values())
@@ -235,11 +245,19 @@ def main():
             print(f"    Competitor (PAT): {total_competitor_pat}")
             print(f"    Auto: {total_auto}")
 
+            # Load global negative ASINs for PAT campaigns if provided
+            global_negative_asins = None
+            if args.negatives:
+                global_negative_asins = load_negative_asins(args.negatives)
+                if global_negative_asins:
+                    print(f"  Loaded {len(global_negative_asins)} negative ASINs for PAT campaigns")
+
             # Generate CSV with keywords
             output = generate_perpetua_csv(
                 campaign_keywords=campaign_keywords,
                 config=config,
-                output_path=args.output
+                output_path=args.output,
+                global_negative_asins=global_negative_asins
             )
         else:
             # Generate empty template
@@ -251,10 +269,11 @@ def main():
             )
 
         print(f"\nGenerated: {output}")
-        print(f"\n10-Campaign Structure per SKU:")
+        print(f"\n12-Campaign Structure per SKU:")
         print(f"  [SP_BRANDED_EXACT], [SP_BRANDED_PHRASE], [SP_BRANDED_BROAD], [SP_BRANDED_PAT]")
         print(f"  [SP_MANUAL_EXACT], [SP_MANUAL_PHRASE], [SP_MANUAL_BROAD]")
-        print(f"  [SP_COMPETITOR_KW], [SP_COMPETITOR_PAT], [SP_AUTO]")
+        print(f"  [SP_COMPETITOR_EXACT], [SP_COMPETITOR_PHRASE], [SP_COMPETITOR_BROAD], [SP_COMPETITOR_PAT]")
+        print(f"  [SP_AUTO]")
         print(f"\nConfiguration:")
         print(f"  Daily Budget: ${config.daily_budget}")
         print(f"  Target ACoS: {config.target_acos}%")
