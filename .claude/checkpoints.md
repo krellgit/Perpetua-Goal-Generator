@@ -1,5 +1,37 @@
 # Perpetua Goal Generator Checkpoints
 
+## PGG-002 - 2026-01-10T13:15:00+08:00
+
+**Summary:** Ran first batch upload - hit Perpetua account goal limit
+
+**Goal:** Upload all 1265 goals to Perpetua via API
+
+**Status:** Partial - 488 goals created, hit account limit
+
+**What changed:**
+1. Ran full batch upload using `perpetua-api-uploader.js`
+2. Successfully created 488 goals (86 unique ASINs)
+3. Hit Perpetua account limit: "Account cannot create any more custom goals"
+4. Created `processed_asins.txt` - list of 86 ASINs uploaded
+5. Created `remaining_asins.txt` - list of 150 ASINs pending
+
+**Upload stats:**
+- Goals created: 488 / 1265
+- ASINs completed: 86
+- ASINs remaining: 150
+- Last successful row: 487
+
+**Blockers:**
+- Perpetua account has reached max custom goals limit
+- Need to contact Perpetua sales to increase limit
+
+**Next steps:**
+1. Contact Perpetua sales to increase goal limit
+2. Resume upload with `node perpetua-api-uploader.js` (auto-resumes from row 488)
+3. Or delete old/unused goals in Perpetua to free up slots
+
+---
+
 ## PGG-001 - 2026-01-10T12:30:00+08:00
 
 **Summary:** Added direct API uploader for Perpetua goals
