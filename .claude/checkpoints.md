@@ -1,5 +1,60 @@
 # Perpetua Goal Generator Checkpoints
 
+## PGG-003 - 2026-01-12T22:30:00+08:00
+
+**Summary:** Simplified uploader - 230 non-branded goals created
+
+**Goal:** Create simplified non-branded goals (1 campaign per ASIN instead of 12), combining all match types
+
+**Status:** Complete
+
+**Changes:**
+1. Created `extract_unbranded.py` - extracts unbranded keywords from bulk export
+2. Created `perpetua-simplified-uploader.js` - creates 1 goal per ASIN with all match types
+3. Created `run_harvesting.js` - creates goals for ASINs without existing keywords
+4. Trimmed 710MB bulk export to 578MB for 236 target ASINs
+5. Extracted 7,376 unbranded keywords across 207 ASINs
+6. Identified 29 ASINs without unbranded keywords
+7. Successfully uploaded 207 goals with keywords + 23 harvesting-only goals
+
+**Files modified:**
+1. extract_unbranded.py (new) - keyword extraction from bulk export
+2. perpetua-simplified-uploader.js (new) - main uploader script
+3. run_harvesting.js (new) - harvesting-only goals uploader
+4. unbranded_keywords.json (new) - extracted keywords for 207 ASINs
+5. harvesting_only_keywords.json (new) - 29 ASINs with seed keywords
+6. asins_without_unbranded_keywords.txt (new) - list of 29 ASINs
+7. simplified_upload_progress.json (new) - progress tracking
+8. harvesting_upload_progress.json (new) - harvesting progress tracking
+9. product_cache.json (updated) - ASIN to product_id mapping
+
+**Commits:**
+1. (pending) - All changes not yet committed
+
+**Key decisions:**
+1. **1 campaign per ASIN** - Simplified from 12 campaigns (branded, competitor, PAT, auto, etc.) to just 1 non-branded campaign with all match types combined
+2. **Naming convention: `SKU -JN[SP_NON-BRANDED]`** - User specified this format (removed ASIN from name)
+3. **Extract ASIN from campaign name** - Bulk export ASIN column was empty, had to parse ASIN from campaign name using regex `\b(B[0-9A-Z]{9})\b`
+4. **Include all keyword states** - Removed paused/archived filter to capture all historical keywords
+5. **Harvesting goals need seed keyword** - Perpetua API requires at least 1 keyword, used "nightstand"/"sideboard" as broad seed based on SKU prefix (NT/SD)
+6. **6 ASINs not in Perpetua catalog** - B00XHKC1WK, B01G4G72AO, B08467WS27, B08Z1C52LG, B0C3WP79BH, B0C5JV2G69 - skipped
+
+**Upload stats:**
+- Goals with keywords: 207 (from bulk export)
+- Harvesting-only goals: 23 (with seed keyword)
+- Total goals created: 230
+- Products not found: 6
+- Budget: $50/day, ACOS: 60%
+
+**Blockers:** None
+
+**Next steps:**
+1. Commit changes to git
+2. Monitor goal performance in Perpetua
+3. Consider adding the 6 missing products to Perpetua catalog
+
+---
+
 ## PGG-002 - 2026-01-10T13:15:00+08:00
 
 **Summary:** Ran first batch upload - hit Perpetua account goal limit
